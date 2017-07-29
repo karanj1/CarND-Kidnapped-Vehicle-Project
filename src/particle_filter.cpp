@@ -28,6 +28,10 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
 	num_particles = 101;
 
+	 // Engine for later generation of particles
+  	random_device rd;
+  	default_random_engine gen(rd());
+
     // define normal distributions for sensor noise
     normal_distribution<double> N_x_init(0, std[0]);
     normal_distribution<double> N_y_init(0, std[1]);
@@ -60,6 +64,30 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
 	//  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
 	//  http://www.cplusplus.com/reference/random/default_random_engine/
 
+	// define normal distributions for sensor noise
+    normal_distribution<double> NoiseDist_x(0, std_pos[0]);
+    normal_distribution<double> NoiseDist_y(0, std_pos[1]);
+    normal_distribution<double> NoiseDist_theta(0, std_pos[2]);  
+
+    for (int i = 0; i < num_particles; i++) {  
+
+      // calculate new state / prediction  //Lesson 12(Motion Model) Session 3  
+      if (fabs(yaw_rate) < 0.00001) {  
+        particles[i].x += velocity * delta_t * cos(particles[i].theta);
+        particles[i].y += velocity * delta_t * sin(particles[i].theta);
+      } 
+      else {
+        particles[i].x += velocity / yaw_rate * (sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta));
+        particles[i].y += velocity / yaw_rate * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t));
+        particles[i].theta += yaw_rate * delta_t;
+      }  
+
+      // add noise
+      particles[i].x += NoiseDist_x(gen);
+      particles[i].y += NoiseDist_y(gen);
+      particles[i].theta += NoiseDist_theta(gen);
+  }
+
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
@@ -82,6 +110,54 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   and the following is a good resource for the actual equation to implement (look at equation 
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
+
+	// for each particle...
+    for (int i = 0; i < num_particles; i++) {  
+
+      // get the particle x, y coordinates
+      double p_x = particles[i].x;
+      double p_y = particles[i].y;
+      double p_theta = particles[i].theta;  
+
+      // create a vector to hold the map landmark locations predicted to be within sensor range of the particle
+      vector<LandmarkObs> predictions;  
+
+      vector<Map::single_landmark_s> landmarks = map_landmarks.landmark_list;
+      vector<double> landmark_obs_dist (landmarks.size());
+      // for each map landmark...
+      for (unsigned int j = 0; j < landmarks.size(); j++) {  
+
+        // get id and x,y coordinates
+        float lm_x = landmarks[j].x_f;
+        float lm_y = landmarks[j].y_f;
+        int lm_id = landmarks[j].id_i;
+        
+        
+        //Rectangular Region : rather than using the "sqrt" method considering a circular region around the particle, 
+        //this considers a rectangular region but is computationally faster)
+        //if (fabs(lm_x - p_x) <= sensor_range && fabs(lm_y - p_y) <= sensor_range) { 
+
+        //Circular region using Eucladian distance "sqrt"
+        double landmark_part_dist = sqrt(pow(p_x - lm_x, 2) + pow(p_y - lm_y, 2));
+        // only consider landmarks within sensor range of the particle
+        if (landmark_part_dist <= sensor_range) {
+          // add prediction to vector
+          predictions.push_back(LandmarkObs{ lm_id, lm_x, lm_y });
+        }
+
+      }  
+
+      // create and populate a copy of the list of observations transformed from vehicle coordinates to map coordinates
+      vector<LandmarkObs> transformed_os;
+      for (unsigned int j = 0; j < observations.size(); j++) {
+        double t_x = cos(p_theta)*observations[j].x - sin(p_theta)*observations[j].y + p_x;
+        double t_y = sin(p_theta)*observations[j].x + cos(p_theta)*observations[j].y + p_y;
+        transformed_os.push_back(LandmarkObs{ observations[j].id, t_x, t_y });
+      }  
+
+      // perform dataAssociation for the predictions and transformed observations on current particle
+      dataAssociation(predictions, transformed_os);
+
 }
 
 void ParticleFilter::resample() {
