@@ -177,6 +177,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
       }  
 
       // create and populate a copy of the list of observations transformed from vehicle coordinates to map coordinates
+      // http://planning.cs.uiuc.edu/node99.html   equuation 3.33
+      // https://discussions.udacity.com/t/coordinate-transform/241288/4
       vector<LandmarkObs> transformed_os;
       for (unsigned int q = 0; q < observations.size(); q++) {
         double t_x = cos(p_theta) * observations[q].x - sin(p_theta) * observations[q].y + p_x;
@@ -207,13 +209,14 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
           }
         }  
 
-        // calculate weight for this observation with multivariate Gaussian  //Lesson 14 Session 11
+        // calculate weight for this observation with multivariate Gaussian  //Lesson 14 Session 13 (Calculating the Particle's Final Weight)
         double s_x = std_landmark[0];
         double s_y = std_landmark[1];
         double obs_w = ( 1/(2*M_PI*s_x*s_y)) * exp( -( pow(pr_x-o_x,2)/(2*pow(s_x, 2)) + (pow(pr_y-o_y,2)/(2*pow(s_y, 2))) ) );  
 
         // product of this obersvation weight with total observations weight
         particles[i].weight *= obs_w;
+        weights[i] = particles[i].weight;
       }
     }
 
@@ -223,6 +226,26 @@ void ParticleFilter::resample() {
 	// TODO: Resample particles with replacement with probability proportional to their weight. 
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
+
+	/*
+	std::discrete_distribution produces random integers on the interval [0, n), where the probability of each individual integer i is defined as 
+	wi/S, that is the weight of the ith integer divided by the sum of all n weights.
+	*/
+
+	  // Vector for new particles
+  	vector<Particle> new_particles (num_particles);
+  
+  	// Use discrete distribution to return particles by weight
+  	random_device rd;
+  	default_random_engine gen(rd());
+  	for (int i = 0; i < num_particles; ++i) {
+    	discrete_distribution<int> index(weights.begin(), weights.end());
+    	new_particles[i] = particles[index(gen)];
+    
+  	}
+  
+  	// Replace old particles with the resampled particles
+  	particles = new_particles;
 
 }
 
